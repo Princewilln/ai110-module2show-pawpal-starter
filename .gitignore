@@ -1,5 +1,12 @@
-__pycache__/
+# Virtual environment
 .venv/
-.venv_new/
-.pytest_cache/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# macOS
 .DS_Store
+
+# VS Code
+.vscode/

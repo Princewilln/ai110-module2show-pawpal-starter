@@ -5,7 +5,14 @@
 **a. Initial design**
 
 - Briefly describe your initial UML design.
+
+you are a senior software engineer designing a pet care app with four classes which includes:  owner, Pet, scheduler and task. The owner will have a pet and be able to use the scheduler to schedule a task. This classes should have attributes and methods. This pet care app is a smart pet care management sustem that helps owners keeps their pet happy and friiendly, the app tracks daily routines --fedings, walks, medications, and appoinments while using algorithmic logic to organize and prioritize tasks.
+
+You are a senior system designer create a mermaid.js class diagram with owners name and list of pets, methods to add , remove and get daily schedule. Pet will have an ID and name, specie, age and list of task, should  and remove task. The scheduler will be a list of tasks, have a method to add task, remove task, get sorted tasks, detect conflict and generate daily plan. Task will have an ID, type of task, datetime scheduled time, bool recurring, frequency, bool completed and a mark complete method.
+
 - What classes did you include, and what responsibilities did you assign to each?
+
+classes which includes:  owner, Pet, scheduler and task. The owner will have a pet and be able to use the scheduler to schedule a task. This classes should have attributes and methods. This pet care app is a smart pet care management sustem that helps owners keeps their pet happy and friiendly, the app tracks daily routines --fedings, walks, medications, and appoinments while using algorithmic logic to organize and prioritize tasks.
 
 **b. Design changes**
 
