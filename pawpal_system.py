@@ -30,10 +30,12 @@ class Task:
     completed: bool = False
 
     def __post_init__(self) -> None:
+        """Raise ValueError if the task is recurring but has no frequency set."""
         if self.recurring and not self.frequency:
             raise ValueError(f"Task '{self.id}' is recurring but has no frequency set.")
 
     def mark_complete(self) -> None:
+        """Mark this task as completed."""
         self.completed = True
 
 
@@ -46,6 +48,7 @@ class Pet:
     tasks: list[Task] = field(default_factory=list)
 
     def add_task(self, task: Task) -> None:
+        """Append a task to this pet, rejecting tasks that belong to a different pet."""
         if task.pet_id != self.id:
             raise ValueError(
                 f"Task '{task.id}' belongs to pet '{task.pet_id}', not '{self.id}'."
@@ -53,6 +56,7 @@ class Pet:
         self.tasks.append(task)
 
     def remove_task(self, task_id: str) -> None:
+        """Remove a task by ID, raising ValueError if it does not exist on this pet."""
         for i, task in enumerate(self.tasks):
             if task.id == task_id:
                 self.tasks.pop(i)
@@ -67,11 +71,13 @@ class Owner:
         self.scheduler: Scheduler = Scheduler(self.pets)  # shares same list object — no sync needed
 
     def add_pet(self, pet: Pet) -> None:
+        """Register a new pet to this owner, rejecting duplicate pet IDs."""
         if any(p.id == pet.id for p in self.pets):
             raise ValueError(f"Pet '{pet.id}' is already registered to owner '{self.name}'.")
         self.pets.append(pet)
 
     def remove_pet(self, pet_id: str) -> None:
+        """Unregister a pet by ID, raising ValueError if not found."""
         for i, pet in enumerate(self.pets):
             if pet.id == pet_id:
                 self.pets.pop(i)
@@ -79,6 +85,7 @@ class Owner:
         raise ValueError(f"Pet '{pet_id}' not found for owner '{self.name}'.")
 
     def get_daily_schedule(self, date: datetime) -> list[Task]:
+        """Return all tasks scheduled for the given date, sorted by time."""
         return self.scheduler.generate_daily_plan(date)
 
 
@@ -92,10 +99,12 @@ class Scheduler:
         self.conflict_window: timedelta = conflict_window
 
     def add_task(self, task: Task) -> None:
+        """Route a task to the correct pet using the task's pet_id."""
         pet = self._find_pet(task.pet_id)
         pet.add_task(task)
 
     def remove_task(self, task_id: str) -> None:
+        """Search all pets for the task by ID and remove it, raising ValueError if not found."""
         for pet in self.pets:
             for task in pet.tasks:
                 if task.id == task_id:
@@ -104,10 +113,12 @@ class Scheduler:
         raise ValueError(f"Task '{task_id}' not found across any registered pet.")
 
     def get_sorted_tasks(self) -> list[Task]:
+        """Return every task across all pets sorted by scheduled time."""
         all_tasks = [task for pet in self.pets for task in pet.tasks]
         return sorted(all_tasks, key=lambda t: t.scheduled_time)
 
     def detect_conflict(self, task: Task) -> Optional[Task]:
+        """Return the first existing task within the conflict window, or None if the slot is free."""
         for existing in self.get_sorted_tasks():
             if existing.id == task.id:
                 continue
@@ -117,6 +128,7 @@ class Scheduler:
         return None
 
     def generate_daily_plan(self, date: datetime) -> list[Task]:
+        """Collect and sort all tasks scheduled on the given date, including recurring ones."""
         daily_tasks = [
             task
             for pet in self.pets
@@ -128,12 +140,14 @@ class Scheduler:
     # ── private helpers ────────────────────────────────────────────────────
 
     def _find_pet(self, pet_id: str) -> Pet:
+        """Look up a pet by ID, raising ValueError if it is not registered."""
         for pet in self.pets:
             if pet.id == pet_id:
                 return pet
         raise ValueError(f"Pet '{pet_id}' not registered with this scheduler.")
 
     def _is_scheduled_on(self, task: Task, date: datetime) -> bool:
+        """Return True if the task falls on the given date based on its recurrence rule."""
         if not task.recurring:
             return task.scheduled_time.date() == date.date()
         if task.frequency == Frequency.DAILY:
