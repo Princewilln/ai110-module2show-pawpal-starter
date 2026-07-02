@@ -2,17 +2,31 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Optional
+
+
+class TaskType(str, Enum):
+    FEEDING     = "feeding"
+    WALK        = "walk"
+    MEDICATION  = "medication"
+    APPOINTMENT = "appointment"
+
+
+class Frequency(str, Enum):
+    DAILY   = "daily"
+    WEEKLY  = "weekly"
+    MONTHLY = "monthly"
 
 
 @dataclass
 class Task:
     id: str
     pet_id: str
-    task_type: str               # "feeding", "walk", "medication", "appointment"
+    task_type: TaskType
     scheduled_time: datetime
     recurring: bool = False
-    frequency: Optional[str] = None  # "daily", "weekly", "monthly" — only when recurring=True
+    frequency: Optional[Frequency] = None
     completed: bool = False
 
     def __post_init__(self) -> None:
@@ -69,11 +83,13 @@ class Owner:
 
 
 class Scheduler:
-    # Two tasks within this window are considered a scheduling conflict.
-    _CONFLICT_WINDOW = timedelta(minutes=15)
-
-    def __init__(self, pets: list[Pet]) -> None:
+    def __init__(
+        self,
+        pets: list[Pet],
+        conflict_window: timedelta = timedelta(minutes=15),
+    ) -> None:
         self.pets: list[Pet] = pets  # shared reference to Owner.pets — single source of truth
+        self.conflict_window: timedelta = conflict_window
 
     def add_task(self, task: Task) -> None:
         pet = self._find_pet(task.pet_id)
@@ -96,7 +112,7 @@ class Scheduler:
             if existing.id == task.id:
                 continue
             delta = abs((existing.scheduled_time - task.scheduled_time).total_seconds())
-            if delta < self._CONFLICT_WINDOW.total_seconds():
+            if delta < self.conflict_window.total_seconds():
                 return existing
         return None
 
@@ -120,10 +136,10 @@ class Scheduler:
     def _is_scheduled_on(self, task: Task, date: datetime) -> bool:
         if not task.recurring:
             return task.scheduled_time.date() == date.date()
-        if task.frequency == "daily":
+        if task.frequency == Frequency.DAILY:
             return True
-        if task.frequency == "weekly":
+        if task.frequency == Frequency.WEEKLY:
             return task.scheduled_time.weekday() == date.weekday()
-        if task.frequency == "monthly":
+        if task.frequency == Frequency.MONTHLY:
             return task.scheduled_time.day == date.day
         return False
