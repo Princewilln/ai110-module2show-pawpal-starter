@@ -1,5 +1,7 @@
 import streamlit as st
 
+from pawpal_system import Frequency, Owner, Pet, Task, TaskType
+
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
 st.title("🐾 PawPal+")
