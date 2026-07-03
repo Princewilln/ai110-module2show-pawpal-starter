@@ -17,7 +17,17 @@ classes which includes:  owner, Pet, scheduler and task. The owner will have a p
 **b. Design changes**
 
 - Did your design change during implementation?
+yes
 - If yes, describe at least one change and why you made it.
+
+Summary Table
+#	Issue	                                 Severity	                                       Fix
+1	Owner missing self.scheduler	    High — broken feature	              Add Scheduler as attribute
+2	Task missing pet_id         	    High — lost context in Scheduler	  Add pet_id: str to Task
+3	Dual ownership of tasks      	    High — sync bugs in production	      Scheduler derives from Owner.pets
+4	detect_conflict returns bool	    Medium — forces double lookup	      Return Optional[Task]
+5	recurring + None frequency	        Medium — silent invalid state	      Add __post_init__ guard
+6	generate_daily_plan has no date 	Medium — untestable	                  Add date: datetime param
 
 ---
 
@@ -54,11 +64,14 @@ classes which includes:  owner, Pet, scheduler and task. The owner will have a p
 **a. What you tested**
 
 - What behaviors did you test?
+I check if app.py successfully imports the logic layer! Adding a pet in the browser actually creates a Pet object that stays in memory.
 - Why were these tests important?
+FThe test is important because it test if the logic layer is accessible to the UI
 
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
+100% Confident
 - What edge cases would you test next if you had more time?
 
 ---
