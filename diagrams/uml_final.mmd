@@ -1,0 +1,96 @@
+classDiagram
+    direction TB
+
+    %% ── Enumerations ───────────────────────────────────────────────────────
+    class TaskType {
+        <<enumeration>>
+        FEEDING
+        WALK
+        MEDICATION
+        APPOINTMENT
+    }
+
+    class Frequency {
+        <<enumeration>>
+        DAILY
+        WEEKLY
+        MONTHLY
+    }
+
+    %% ── Core domain classes ────────────────────────────────────────────────
+    class Task {
+        +str id
+        +str pet_id
+        +TaskType task_type
+        +datetime scheduled_time
+        +bool recurring
+        +Frequency frequency
+        +bool completed
+        +set~date~ completed_dates
+        +mark_complete(on_date) None
+        +is_done_for(on_date) bool
+        +next_occurrence(after) datetime
+        +spawn_next() Task
+    }
+
+    class Pet {
+        +str id
+        +str name
+        +str species
+        +int age
+        +list~Task~ tasks
+        +add_task(task) None
+        +remove_task(task_id) None
+    }
+
+    class Owner {
+        +str name
+        +list~Pet~ pets
+        +Scheduler scheduler
+        +add_pet(pet) None
+        +remove_pet(pet_id) None
+        +get_daily_schedule(date) list~Task~
+    }
+
+    %% ── Conflict reporting ─────────────────────────────────────────────────
+    class ConflictWarning {
+        <<frozen dataclass>>
+        +Task task_a
+        +Task task_b
+        +message str
+    }
+
+    %% ── Scheduling engine ──────────────────────────────────────────────────
+    class Scheduler {
+        +list~Pet~ pets
+        +timedelta conflict_window
+        +add_task(task) None
+        +add_task_safe(task, ref_date) list~ConflictWarning~
+        +remove_task(task_id) None
+        +mark_task_complete(task_id, on_date) Task
+        +sort_by_time(tasks) list~Task~
+        +get_sorted_tasks() list~Task~
+        +filter_tasks(pet_name, completed, ref_date) list~Task~
+        +filter_by_pet(pet_id) list~Task~
+        +filter_by_status(completed, ref_date) list~Task~
+        +get_overdue_tasks(now) list~Task~
+        +detect_conflict(task, ref_date) Task
+        +detect_all_conflicts(ref_date) list~ConflictWarning~
+        +generate_daily_plan(date) list~Task~
+        -_find_pet(pet_id) Pet
+        -_find_task(task_id) Task
+        -_is_scheduled_on(task, date) bool
+    }
+
+    %% ── Relationships ──────────────────────────────────────────────────────
+    Owner "1"   *-- "1"    Scheduler      : owns (composition)
+    Owner "1"   *-- "0..*" Pet            : registers (composition)
+    Scheduler   o-- "0..*" Pet            : shared list (aggregation)
+    Pet   "1"   *-- "0..*" Task           : contains (composition)
+
+    Task        -->        TaskType       : task_type
+    Task        -->        Frequency      : frequency
+    Task        ..>        Task           : spawn_next()
+
+    ConflictWarning --> Task : task_a / task_b
+    Scheduler   ..>        ConflictWarning : produces

@@ -20,7 +20,7 @@ from datetime import datetime
 
 from pawpal_system import ConflictWarning, Owner, Pet, Task, TaskType
 
-SEP  = "=" * 64
+SEP = "=" * 64
 THIN = "─" * 64
 
 
@@ -29,6 +29,7 @@ def today_at(hour: int, minute: int = 0) -> datetime:
 
 
 # ── Print helpers ──────────────────────────────────────────────────────────────
+
 
 def print_header(title: str) -> None:
     print(f"\n{SEP}")
@@ -51,23 +52,24 @@ def print_warnings(warnings: list[ConflictWarning]) -> None:
 
 
 def print_task_row(t: Task, pet_index: dict, ref: datetime) -> None:
-    pet       = pet_index.get(t.pet_id)
+    pet = pet_index.get(t.pet_id)
     pet_label = pet.name if pet else t.pet_id
-    status    = "✓" if t.is_done_for(ref) else "○"
+    status = "✓" if t.is_done_for(ref) else "○"
     recur_tag = f"  ↺ {t.frequency.value}" if t.recurring else ""
-    time_str  = t.scheduled_time.strftime("%I:%M %p")
-    type_str  = t.task_type.value.upper()
+    time_str = t.scheduled_time.strftime("%I:%M %p")
+    type_str = t.task_type.value.upper()
     print(f"    {status}  {time_str}   {type_str:<14}  {pet_label}{recur_tag}")
 
 
 # ── Main demo ──────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     today = datetime.now()
 
-    owner    = Owner("Alice")
-    buddy    = Pet(id="p1", name="Buddy",    species="Golden Retriever", age=3)
-    whiskers = Pet(id="p2", name="Whiskers", species="Persian Cat",      age=5)
+    owner = Owner("Alice")
+    buddy = Pet(id="p1", name="Buddy", species="Golden Retriever", age=3)
+    whiskers = Pet(id="p2", name="Whiskers", species="Persian Cat", age=5)
     owner.add_pet(buddy)
     owner.add_pet(whiskers)
     pet_index = {p.id: p for p in owner.pets}
@@ -75,17 +77,21 @@ def main() -> None:
     print_header("PawPal+ — Lightweight Conflict Detection")
     print(f"  Owner : {owner.name}")
     print("  Pets  : Buddy (Golden Retriever)  |  Whiskers (Persian Cat)")
-    print(f"  Conflict window : {owner.scheduler.conflict_window.seconds // 60} minutes")
+    print(
+        f"  Conflict window : {owner.scheduler.conflict_window.seconds // 60} minutes"
+    )
 
     # ── Anchor task: Buddy's walk at 09:00 AM ─────────────────────────────
     #   Added with plain add_task — no conflicts yet (schedule is empty)
     print_section("SETUP — anchor task, no conflicts yet")
-    owner.scheduler.add_task(Task(
-        id="walk_buddy",
-        pet_id="p1",
-        task_type=TaskType.WALK,
-        scheduled_time=today_at(9, 0),
-    ))
+    owner.scheduler.add_task(
+        Task(
+            id="walk_buddy",
+            pet_id="p1",
+            task_type=TaskType.WALK,
+            scheduled_time=today_at(9, 0),
+        )
+    )
     print("    Added: walk_buddy  (Buddy, WALK @ 09:00 AM)")
     print_warnings(owner.scheduler.detect_all_conflicts())
 
@@ -95,12 +101,14 @@ def main() -> None:
     print_section("DEMO 1 — same pet, exact same time")
     print("    Adding: feed_buddy  (Buddy, FEEDING @ 09:00 AM)\n")
 
-    w1 = owner.scheduler.add_task_safe(Task(
-        id="feed_buddy",
-        pet_id="p1",
-        task_type=TaskType.FEEDING,
-        scheduled_time=today_at(9, 0),
-    ))
+    w1 = owner.scheduler.add_task_safe(
+        Task(
+            id="feed_buddy",
+            pet_id="p1",
+            task_type=TaskType.FEEDING,
+            scheduled_time=today_at(9, 0),
+        )
+    )
     print_warnings(w1)
 
     # ── DEMO 2: Different pets, exact same time ────────────────────────────
@@ -109,12 +117,14 @@ def main() -> None:
     print_section("DEMO 2 — different pets, exact same time")
     print("    Adding: med_whiskers  (Whiskers, MEDICATION @ 09:00 AM)\n")
 
-    w2 = owner.scheduler.add_task_safe(Task(
-        id="med_whiskers",
-        pet_id="p2",
-        task_type=TaskType.MEDICATION,
-        scheduled_time=today_at(9, 0),
-    ))
+    w2 = owner.scheduler.add_task_safe(
+        Task(
+            id="med_whiskers",
+            pet_id="p2",
+            task_type=TaskType.MEDICATION,
+            scheduled_time=today_at(9, 0),
+        )
+    )
     print_warnings(w2)
 
     # ── DEMO 3: Same pet, within the 15-minute overlap window ────────────
@@ -123,12 +133,14 @@ def main() -> None:
     print_section("DEMO 3 — same pet, 8 min apart  (within 15-min window)")
     print("    Adding: appt_buddy  (Buddy, APPOINTMENT @ 09:08 AM)\n")
 
-    w3 = owner.scheduler.add_task_safe(Task(
-        id="appt_buddy",
-        pet_id="p1",
-        task_type=TaskType.APPOINTMENT,
-        scheduled_time=today_at(9, 8),
-    ))
+    w3 = owner.scheduler.add_task_safe(
+        Task(
+            id="appt_buddy",
+            pet_id="p1",
+            task_type=TaskType.APPOINTMENT,
+            scheduled_time=today_at(9, 8),
+        )
+    )
     print_warnings(w3)
 
     # ── DEMO 4: Clean task — no conflict ──────────────────────────────────
@@ -137,12 +149,14 @@ def main() -> None:
     print_section("DEMO 4 — clean task, no overlap")
     print("    Adding: walk_whiskers  (Whiskers, WALK @ 03:00 PM)\n")
 
-    w4 = owner.scheduler.add_task_safe(Task(
-        id="walk_whiskers",
-        pet_id="p2",
-        task_type=TaskType.WALK,
-        scheduled_time=today_at(15, 0),
-    ))
+    w4 = owner.scheduler.add_task_safe(
+        Task(
+            id="walk_whiskers",
+            pet_id="p2",
+            task_type=TaskType.WALK,
+            scheduled_time=today_at(15, 0),
+        )
+    )
     print_warnings(w4)
 
     # ── FULL SCAN: detect_all_conflicts() ────────────────────────────────
@@ -155,7 +169,9 @@ def main() -> None:
 
     # ── CURRENT SCHEDULE ──────────────────────────────────────────────────
     #   All 5 tasks were registered — add_task_safe never blocked anything.
-    print_section(f"TODAY'S SCHEDULE  ({today.strftime('%A, %B %d')})  — all tasks registered")
+    print_section(
+        f"TODAY'S SCHEDULE  ({today.strftime('%A, %B %d')})  — all tasks registered"
+    )
     for t in owner.scheduler.sort_by_time():
         print_task_row(t, pet_index, today)
 

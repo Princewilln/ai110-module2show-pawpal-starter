@@ -7,24 +7,24 @@ from typing import Optional
 
 
 class TaskType(str, Enum):
-    FEEDING     = "feeding"
-    WALK        = "walk"
-    MEDICATION  = "medication"
+    FEEDING = "feeding"
+    WALK = "walk"
+    MEDICATION = "medication"
     APPOINTMENT = "appointment"
 
 
 # Lower number = higher priority; used as tiebreaker when two tasks share the same time slot.
 TASK_PRIORITY: dict[TaskType, int] = {
-    TaskType.MEDICATION:  1,
+    TaskType.MEDICATION: 1,
     TaskType.APPOINTMENT: 2,
-    TaskType.FEEDING:     3,
-    TaskType.WALK:        4,
+    TaskType.FEEDING: 3,
+    TaskType.WALK: 4,
 }
 
 
 class Frequency(str, Enum):
-    DAILY   = "daily"
-    WEEKLY  = "weekly"
+    DAILY = "daily"
+    WEEKLY = "weekly"
     MONTHLY = "monthly"
 
 
@@ -81,7 +81,7 @@ class Task:
                 candidate = base.replace(year=after.year, month=after.month)
                 if candidate <= after:
                     month = after.month % 12 + 1
-                    year  = after.year + (1 if after.month == 12 else 0)
+                    year = after.year + (1 if after.month == 12 else 0)
                     candidate = base.replace(year=year, month=month)
                 return candidate
             except ValueError:
@@ -111,15 +111,22 @@ class Task:
             next_time = self.scheduled_time + timedelta(weeks=1)
         elif self.frequency == Frequency.MONTHLY:
             month = self.scheduled_time.month % 12 + 1
-            year  = self.scheduled_time.year + (1 if self.scheduled_time.month == 12 else 0)
+            year = self.scheduled_time.year + (
+                1 if self.scheduled_time.month == 12 else 0
+            )
             try:
                 next_time = self.scheduled_time.replace(year=year, month=month)
             except ValueError:
                 import calendar
+
                 last_day = calendar.monthrange(year, month)[1]
-                next_time = self.scheduled_time.replace(year=year, month=month, day=last_day)
+                next_time = self.scheduled_time.replace(
+                    year=year, month=month, day=last_day
+                )
         else:
-            raise ValueError(f"Cannot spawn next: unsupported frequency '{self.frequency}'.")
+            raise ValueError(
+                f"Cannot spawn next: unsupported frequency '{self.frequency}'."
+            )
 
         # Build lineage ID: "t1" → "t1#2", "t1#2" → "t1#3", etc.
         if "#" in self.id:
@@ -167,12 +174,16 @@ class Owner:
     def __init__(self, name: str) -> None:
         self.name: str = name
         self.pets: list[Pet] = []
-        self.scheduler: Scheduler = Scheduler(self.pets)  # shares same list object — no sync needed
+        self.scheduler: Scheduler = Scheduler(
+            self.pets
+        )  # shares same list object — no sync needed
 
     def add_pet(self, pet: Pet) -> None:
         """Register a new pet to this owner, rejecting duplicate pet IDs."""
         if any(p.id == pet.id for p in self.pets):
-            raise ValueError(f"Pet '{pet.id}' is already registered to owner '{self.name}'.")
+            raise ValueError(
+                f"Pet '{pet.id}' is already registered to owner '{self.name}'."
+            )
         self.pets.append(pet)
 
     def remove_pet(self, pet_id: str) -> None:
@@ -196,17 +207,20 @@ class ConflictWarning:
     so the program keeps running and the caller decides what to do with the information.
     frozen=True: warnings are immutable facts, not editable state.
     """
+
     task_a: Task
     task_b: Task
 
     @property
     def message(self) -> str:
         """Format a human-readable warning string. Never raises."""
-        scope   = "same pet" if self.task_a.pet_id == self.task_b.pet_id else "different pets"
+        scope = (
+            "same pet" if self.task_a.pet_id == self.task_b.pet_id else "different pets"
+        )
         gap_sec = abs(
             (self.task_a.scheduled_time - self.task_b.scheduled_time).total_seconds()
         )
-        timing  = "same time" if gap_sec == 0 else f"{int(gap_sec // 60)} min apart"
+        timing = "same time" if gap_sec == 0 else f"{int(gap_sec // 60)} min apart"
         return (
             f"⚠  CONFLICT ({scope}, {timing})  "
             f"'{self.task_a.id}' {self.task_a.task_type.value} "
@@ -222,7 +236,9 @@ class Scheduler:
         pets: list[Pet],
         conflict_window: timedelta = timedelta(minutes=15),
     ) -> None:
-        self.pets: list[Pet] = pets  # shared reference to Owner.pets — single source of truth
+        self.pets: list[Pet] = (
+            pets  # shared reference to Owner.pets — single source of truth
+        )
         self.conflict_window: timedelta = conflict_window
 
     def add_task(self, task: Task) -> None:
@@ -240,12 +256,13 @@ class Scheduler:
         Returns an empty list when the new task has no clashes.
         """
         self.add_task(task)
-        ref     = reference_date or datetime.now()
-        active  = [
-            t for t in self.get_sorted_tasks()
+        ref = reference_date or datetime.now()
+        active = [
+            t
+            for t in self.get_sorted_tasks()
             if not t.is_done_for(ref) and t.id != task.id
         ]
-        window   = self.conflict_window.total_seconds()  # hoist: compute once
+        window = self.conflict_window.total_seconds()  # hoist: compute once
         warnings: list[ConflictWarning] = []
         for existing in active:
             # abs() needed here: active is sorted by time but task may sit anywhere in it
@@ -287,8 +304,10 @@ class Scheduler:
         target.mark_complete(on_date)
 
         if next_task is not None:
-            target.recurring  = False  # retire: won't repeat in future daily plans
-            target.completed  = True   # mark_complete ran while recurring=True so didn't set this
+            target.recurring = False  # retire: won't repeat in future daily plans
+            target.completed = (
+                True  # mark_complete ran while recurring=True so didn't set this
+            )
             self.add_task(next_task)
 
         return next_task
@@ -303,7 +322,9 @@ class Scheduler:
         Example key behaviour:
             sorted(tasks, key=lambda t: t.scheduled_time.strftime("%H:%M"))
         """
-        source = tasks if tasks is not None else [t for pet in self.pets for t in pet.tasks]
+        source = (
+            tasks if tasks is not None else [t for pet in self.pets for t in pet.tasks]
+        )
         return sorted(source, key=lambda t: t.scheduled_time.strftime("%H:%M"))
 
     def filter_tasks(
@@ -346,7 +367,9 @@ class Scheduler:
         the early-break optimisation in their inner loops.
         """
         all_tasks = [task for pet in self.pets for task in pet.tasks]
-        return sorted(all_tasks, key=lambda t: (t.scheduled_time, TASK_PRIORITY[t.task_type]))
+        return sorted(
+            all_tasks, key=lambda t: (t.scheduled_time, TASK_PRIORITY[t.task_type])
+        )
 
     def filter_by_pet(self, pet_id: str) -> list[Task]:
         """Return all tasks belonging to one pet, sorted by time then priority.
@@ -359,7 +382,9 @@ class Scheduler:
         without scanning the full task list manually.
         """
         pet = self._find_pet(pet_id)
-        return sorted(pet.tasks, key=lambda t: (t.scheduled_time, TASK_PRIORITY[t.task_type]))
+        return sorted(
+            pet.tasks, key=lambda t: (t.scheduled_time, TASK_PRIORITY[t.task_type])
+        )
 
     def filter_by_status(
         self, completed: bool, reference_date: Optional[datetime] = None
@@ -391,7 +416,8 @@ class Scheduler:
         """
         cutoff = now or datetime.now()
         return [
-            t for t in self.get_sorted_tasks()
+            t
+            for t in self.get_sorted_tasks()
             if not t.recurring and not t.completed and t.scheduled_time < cutoff
         ]
 
@@ -412,7 +438,7 @@ class Scheduler:
 
         Returns the first conflicting Task found, or None if the slot is clear.
         """
-        ref    = reference_date or datetime.now()
+        ref = reference_date or datetime.now()
         window = self.conflict_window.total_seconds()  # hoist: compute once
         for existing in self.get_sorted_tasks():
             if existing.id == task.id or existing.is_done_for(ref):
@@ -442,12 +468,12 @@ class Scheduler:
              further from a, so we can stop the inner loop early. In practice this
              makes the inner loop O(k) where k ≈ tasks-per-slot, usually 1–2.
         """
-        ref    = reference_date or datetime.now()
+        ref = reference_date or datetime.now()
         active = [t for t in self.get_sorted_tasks() if not t.is_done_for(ref)]
         window = self.conflict_window.total_seconds()  # hoisted: compute once
         warnings: list[ConflictWarning] = []
         for i, a in enumerate(active):
-            for b in active[i + 1:]:
+            for b in active[i + 1 :]:
                 gap = (b.scheduled_time - a.scheduled_time).total_seconds()
                 if gap >= window:
                     break  # sorted order: no later b can conflict with a
@@ -462,7 +488,9 @@ class Scheduler:
             for task in pet.tasks
             if self._is_scheduled_on(task, date)
         ]
-        return sorted(daily_tasks, key=lambda t: (t.scheduled_time, TASK_PRIORITY[t.task_type]))
+        return sorted(
+            daily_tasks, key=lambda t: (t.scheduled_time, TASK_PRIORITY[t.task_type])
+        )
 
     # ── private helpers ────────────────────────────────────────────────────
 

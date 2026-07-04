@@ -26,7 +26,7 @@ owner_name = st.text_input("Owner name", value="Jordan")
 
 if st.button("Create Owner"):
     st.session_state.owner = Owner(owner_name)
-    st.session_state.pet_counter  = 0
+    st.session_state.pet_counter = 0
     st.session_state.task_counter = 0
     st.success(f"Owner **{owner_name}** created. Scheduler is ready.")
 
@@ -59,7 +59,9 @@ if st.button("Add Pet"):
     try:
         owner.add_pet(new_pet)
         st.session_state.pet_counter += 1
-        st.success(f"**{pet_name}** ({species}, age {int(age)}) added to {owner.name}'s care plan.")
+        st.success(
+            f"**{pet_name}** ({species}, age {int(age)}) added to {owner.name}'s care plan."
+        )
     except ValueError as e:
         st.error(str(e))
 
@@ -70,10 +72,17 @@ if not owner.pets:
 pet_index = {p.id: p for p in owner.pets}
 
 st.markdown("**Registered pets**")
-st.table([
-    {"Name": p.name, "Species": p.species, "Age (yrs)": p.age, "Tasks": len(p.tasks)}
-    for p in owner.pets
-])
+st.table(
+    [
+        {
+            "Name": p.name,
+            "Species": p.species,
+            "Age (yrs)": p.age,
+            "Tasks": len(p.tasks),
+        }
+        for p in owner.pets
+    ]
+)
 
 # ── Step 3: Schedule a Task ────────────────────────────────────────────────────
 st.divider()
@@ -83,9 +92,9 @@ st.caption(
     "A conflict warning is shown when any existing task falls within 15 minutes."
 )
 
-pet_labels        = {p.name: p.id for p in owner.pets}
+pet_labels = {p.name: p.id for p in owner.pets}
 selected_pet_name = st.selectbox("Pet", list(pet_labels.keys()))
-selected_pet_id   = pet_labels[selected_pet_name]
+selected_pet_id = pet_labels[selected_pet_name]
 
 col4, col5, col6 = st.columns(3)
 with col4:
@@ -96,7 +105,7 @@ with col6:
     task_min = st.number_input("Minute", min_value=0, max_value=59, value=0, step=15)
 
 recurring = st.checkbox("Recurring?")
-freq_val  = None
+freq_val = None
 if recurring:
     freq_val = st.selectbox("Frequency", [f.value for f in Frequency])
 
@@ -121,12 +130,16 @@ if st.button("Add Task"):
     if warnings:
         for w in warnings:
             clash_pet = pet_index.get(w.task_b.pet_id)
-            gap_sec   = abs(
+            gap_sec = abs(
                 (w.task_a.scheduled_time - w.task_b.scheduled_time).total_seconds()
             )
-            gap_min  = int(gap_sec // 60)
-            gap_str  = "**exact same time**" if gap_min == 0 else f"**{gap_min} min apart**"
-            scope    = "same pet" if w.task_a.pet_id == w.task_b.pet_id else "different pet"
+            gap_min = int(gap_sec // 60)
+            gap_str = (
+                "**exact same time**" if gap_min == 0 else f"**{gap_min} min apart**"
+            )
+            scope = (
+                "same pet" if w.task_a.pet_id == w.task_b.pet_id else "different pet"
+            )
 
             st.warning(
                 f"⚠️ **Conflict detected** ({scope} · {gap_str})\n\n"
@@ -177,8 +190,8 @@ if st.button("Generate Schedule"):
         st.info("No tasks scheduled for today. Add some in Step 3.")
     else:
         # ── Summary metrics ───────────────────────────────────────────────────
-        total     = len(plan)
-        done      = sum(1 for t in plan if t.is_done_for(today))
+        total = len(plan)
+        done = sum(1 for t in plan if t.is_done_for(today))
         remaining = total - done
 
         m1, m2, m3 = st.columns(3)
@@ -189,16 +202,18 @@ if st.button("Generate Schedule"):
         # ── Sorted task table ─────────────────────────────────────────────────
         rows = []
         for task in plan:
-            pet       = pet_index.get(task.pet_id)
-            status    = "✅ Done" if task.is_done_for(today) else "🔲 Pending"
+            pet = pet_index.get(task.pet_id)
+            status = "✅ Done" if task.is_done_for(today) else "🔲 Pending"
             recur_tag = f"↺ {task.frequency.value}" if task.recurring else "—"
-            rows.append({
-                "Time":      task.scheduled_time.strftime("%I:%M %p"),
-                "Task":      task.task_type.value.upper(),
-                "Pet":       pet.name if pet else task.pet_id,
-                "Recurring": recur_tag,
-                "Status":    status,
-            })
+            rows.append(
+                {
+                    "Time": task.scheduled_time.strftime("%I:%M %p"),
+                    "Task": task.task_type.value.upper(),
+                    "Pet": pet.name if pet else task.pet_id,
+                    "Recurring": recur_tag,
+                    "Status": status,
+                }
+            )
 
         st.dataframe(rows, use_container_width=True, hide_index=True)
 
@@ -225,14 +240,14 @@ if st.button("Run Full Conflict Scan"):
         )
 
         for i, w in enumerate(all_conflicts, 1):
-            pet_a    = pet_index.get(w.task_a.pet_id)
-            pet_b    = pet_index.get(w.task_b.pet_id)
-            scope    = "Same pet" if w.task_a.pet_id == w.task_b.pet_id else "Cross-pet"
-            gap_sec  = abs(
+            pet_a = pet_index.get(w.task_a.pet_id)
+            pet_b = pet_index.get(w.task_b.pet_id)
+            scope = "Same pet" if w.task_a.pet_id == w.task_b.pet_id else "Cross-pet"
+            gap_sec = abs(
                 (w.task_a.scheduled_time - w.task_b.scheduled_time).total_seconds()
             )
-            gap_min  = int(gap_sec // 60)
-            gap_str  = "exact same time" if gap_min == 0 else f"{gap_min} min apart"
+            gap_min = int(gap_sec // 60)
+            gap_str = "exact same time" if gap_min == 0 else f"{gap_min} min apart"
 
             with st.expander(f"Conflict {i} — {scope} · {gap_str}", expanded=True):
                 ca, csep, cb = st.columns([5, 1, 5])
@@ -246,7 +261,9 @@ if st.button("Run Full Conflict Scan"):
                     st.markdown(f"**{w.task_b.task_type.value.upper()}**")
                     st.markdown(f"🐾 {pet_b.name if pet_b else w.task_b.pet_id}")
                     st.markdown(f"🕐 {w.task_b.scheduled_time.strftime('%I:%M %p')}")
-                st.caption("💡 Move one task at least 15 minutes away to resolve this conflict.")
+                st.caption(
+                    "💡 Move one task at least 15 minutes away to resolve this conflict."
+                )
 
 # ── Step 6: Filter Schedule ────────────────────────────────────────────────────
 st.divider()
@@ -258,7 +275,7 @@ st.caption(
 
 fcol1, fcol2 = st.columns(2)
 with fcol1:
-    filter_pet    = st.selectbox("Pet", ["All pets"] + [p.name for p in owner.pets])
+    filter_pet = st.selectbox("Pet", ["All pets"] + [p.name for p in owner.pets])
 with fcol2:
     filter_status = st.selectbox("Status", ["All", "Pending", "Completed"])
 
@@ -266,11 +283,11 @@ filter_kwargs: dict = {}
 if filter_pet != "All pets":
     filter_kwargs["pet_name"] = filter_pet
 if filter_status == "Pending":
-    filter_kwargs["completed"]       = False
-    filter_kwargs["reference_date"]  = today
+    filter_kwargs["completed"] = False
+    filter_kwargs["reference_date"] = today
 elif filter_status == "Completed":
-    filter_kwargs["completed"]       = True
-    filter_kwargs["reference_date"]  = today
+    filter_kwargs["completed"] = True
+    filter_kwargs["reference_date"] = today
 
 filtered = owner.scheduler.filter_tasks(**filter_kwargs)
 
@@ -279,14 +296,16 @@ if not filtered:
 else:
     filter_rows = []
     for task in filtered:
-        pet    = pet_index.get(task.pet_id)
+        pet = pet_index.get(task.pet_id)
         status = "✅ Done" if task.is_done_for(today) else "🔲 Pending"
-        filter_rows.append({
-            "Time":   task.scheduled_time.strftime("%I:%M %p"),
-            "Task":   task.task_type.value.upper(),
-            "Pet":    pet.name if pet else task.pet_id,
-            "Status": status,
-        })
+        filter_rows.append(
+            {
+                "Time": task.scheduled_time.strftime("%I:%M %p"),
+                "Task": task.task_type.value.upper(),
+                "Pet": pet.name if pet else task.pet_id,
+                "Status": status,
+            }
+        )
     st.dataframe(filter_rows, use_container_width=True, hide_index=True)
 
 # ── Step 7: Mark Task Complete ─────────────────────────────────────────────────
@@ -297,24 +316,23 @@ st.caption(
     "daily and weekly recurring tasks automatically spawn the next occurrence."
 )
 
-pending_tasks = [
-    t for pet in owner.pets for t in pet.tasks if not t.is_done_for(today)
-]
+pending_tasks = [t for pet in owner.pets for t in pet.tasks if not t.is_done_for(today)]
 
 if not pending_tasks:
     st.success("🎉 All tasks are complete for today — nothing left to do!")
 else:
+
     def task_label(t: Task) -> str:
-        pet  = pet_index.get(t.pet_id)
+        pet = pet_index.get(t.pet_id)
         name = pet.name if pet else t.pet_id
         return (
             f"{t.task_type.value.upper()} — {name} "
             f"@ {t.scheduled_time.strftime('%I:%M %p')}  [{t.id}]"
         )
 
-    label_to_id   = {task_label(t): t.id for t in pending_tasks}
+    label_to_id = {task_label(t): t.id for t in pending_tasks}
     selected_label = st.selectbox("Select task", list(label_to_id.keys()))
-    selected_id    = label_to_id[selected_label]
+    selected_id = label_to_id[selected_label]
 
     if st.button("Mark Complete"):
         spawned = owner.scheduler.mark_task_complete(selected_id, on_date=today)
