@@ -54,6 +54,25 @@ Paste a sample of your app's CLI or Streamlit output here so a reader can see wh
 #   ...
 ```
 
+```
+  ○  12:00 PM   WALK            Buddy (Golden Retriever)
+  ○  06:00 PM   FEEDING         Buddy (Golden Retriever)  ↺ daily
+  ○  06:30 PM   FEEDING         Whiskers (Persian Cat)  ↺ daily
+  ────────────────────────────────────────────────────────────────
+  5 task(s)  |  1 completed ✓  |  4 remaining
+================================================================
+
+  Conflict Detection
+  ────────────────────────────────────────
+  Conflict check — walk for Buddy at 07:05 AM
+  ⚠  Conflicts with: feeding for Buddy at 07:00 AM
+
+  Conflict check — appointment for Whiskers at 10:00 AM
+  ✓  No conflict detected
+```
+
+
+
 ## 🧪 Testing PawPal+
 
 ```bash
@@ -68,18 +87,87 @@ Sample test output:
 
 ```
 # Paste your pytest output here
+
+(.venv) meltingtech@meltingtech:~/codepath/ai110-module2show-pawpal-starter$ .venv/bin/pytest tests/test_pawpal.py -v
+===================================================================================================================================================================== test session starts ======================================================================================================================================================================
+platform linux -- Python 3.13.14, pytest-9.1.1, pluggy-1.6.0 -- /home/meltingtech/codepath/ai110-module2show-pawpal-starter/.venv/bin/python3.13
+cachedir: .pytest_cache
+rootdir: /home/meltingtech/codepath/ai110-module2show-pawpal-starter
+plugins: anyio-4.14.1
+collected 2 items                                                                                                                                                                                                                                                                                                                                              
+
+tests/test_pawpal.py::test_mark_complete_changes_task_status PASSED                                                                                                                                                                                                                                                                                      [ 50%]
+tests/test_pawpal.py::test_add_task_increases_pet_task_count PASSED                                                                                                                                                                                                                                                                                      [100%]
+
+====================================================================================================================================================================== 2 passed in 0.02s =======================================================================================================================================================================
+(.venv) meltingtech@meltingtech:~/codepath/ai110-module2show-pawpal-starter$ 
+
 ```
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
+All scheduling intelligence lives in `pawpal_system.py` across the `Task`,
+`ConflictWarning`, and `Scheduler` classes.
 
-| Feature | Method(s) | Notes |
-|---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+---
+
+### 1. Sorting
+
+| Method | Behaviour |
+|--------|-----------|
+| `Scheduler.sort_by_time(tasks=None)` | Sorts by a `"HH:MM"` string key via `strftime`. Zero-padded 24-hour strings compare lexicographically in the correct time order (`"07:00" < "08:30" < "18:00"`), so no numeric conversion is needed. Pass a subset list to sort a filtered result, or call with no argument to sort every task in the scheduler. |
+| `Scheduler.get_sorted_tasks()` | Full sort using a two-element tuple key `(scheduled_time, TASK_PRIORITY[task_type])`. When two tasks share the same time slot, task priority breaks the tie. Used internally by conflict detection and daily-plan generation. |
+
+**Priority ranking** (`TASK_PRIORITY` dict in `pawpal_system.py`):
+
+| Rank | TaskType | Reasoning |
+|------|----------|-----------|
+| 1 | `MEDICATION` | Highest — health impact if missed |
+| 2 | `APPOINTMENT` | External party is waiting |
+| 3 | `FEEDING` | Consistent but flexible by minutes |
+| 4 | `WALK` | Lowest — most adjustable in timing |
+
+---
+
+### 2. Filtering
+
+| Method | Filter criteria |
+|--------|-----------------|
+| `Scheduler.filter_tasks(*, pet_name, completed, reference_date)` | Combined filter: pass `pet_name` (human-readable string), `completed` (`True`/`False`), or both. All supplied arguments are ANDed. Results returned via `sort_by_time()`. |
+| `Scheduler.filter_by_pet(pet_id)` | All tasks for one pet by internal ID, sorted by time and priority. Raises `ValueError` if the pet is not registered. |
+| `Scheduler.filter_by_status(completed, reference_date)` | Tasks matching the completion flag on the given date. For recurring tasks, "completed" is per-date (via `Task.is_done_for()`), not a permanent boolean — the same daily feeding is done today but pending again tomorrow. |
+| `Scheduler.get_overdue_tasks(now)` | Non-recurring tasks whose `scheduled_time` has passed and `completed` is still `False`. Recurring tasks are excluded — they never go overdue because `mark_task_complete()` auto-spawns a fresh instance instead. |
+
+---
+
+### 3. Conflict Detection
+
+PawPal+ uses **lightweight conflict detection**: the program never crashes or
+rejects a task. Warnings are returned as data and the caller decides what to do.
+
+| Method / Class | Role |
+|----------------|------|
+| `ConflictWarning` (frozen dataclass) | Holds the two clashing `Task` objects. The `.message` property formats a ready-to-print string showing scope (`same pet` / `different pets`), gap in minutes, task IDs, types, and times. `frozen=True` — warnings are immutable facts, not editable state. |
+| `Scheduler.add_task_safe(task)` | Registers the task unconditionally, then returns `list[ConflictWarning]` for every active task within the `conflict_window`. Empty list = no clashes. Suitable for real-time feedback as the owner builds their schedule. |
+| `Scheduler.detect_conflict(task)` | Probes one candidate task and returns the **first** conflicting active task, or `None`. For single-task pre-flight checks before committing an add. |
+| `Scheduler.detect_all_conflicts()` | Full scan of every active task pair — **both same-pet and cross-pet**. The owner physically attends every task, so two tasks at the same time clash regardless of which pet they belong to. Returns `list[ConflictWarning]`. |
+
+**Algorithm optimisations in `detect_all_conflicts()`:**
+
+- `abs()` removed — input is pre-sorted, so `b` is always ≥ `a` in time; the gap is always non-negative.
+- `conflict_window.total_seconds()` hoisted above the loops — computed once, not n·(n−1)/2 times.
+- `break` on `gap >= window` — sorted order guarantees no later `b` can conflict with `a`, making the inner loop O(k) per step where k ≈ tasks-per-slot (usually 1–2).
+
+---
+
+### 4. Recurring Tasks
+
+| Method | Behaviour |
+|--------|-----------|
+| `Task.spawn_next()` | Creates and returns the **next instance** of a recurring task using `timedelta`: `DAILY → scheduled_time + timedelta(days=1)`, `WEEKLY → scheduled_time + timedelta(weeks=1)`. Assigns a lineage ID so the chain is traceable: `"feed_buddy"` → `"feed_buddy#2"` → `"feed_buddy#3"`. |
+| `Scheduler.mark_task_complete(task_id)` | Orchestrates the full completion sequence in four steps: (1) call `spawn_next()` to build the next instance, (2) call `mark_complete()` on the original, (3) set `recurring=False` and `completed=True` to retire the original so it stops appearing in future daily plans, (4) register the new instance. Returns the spawned `Task`, or `None` for non-recurring and monthly tasks. |
+| `Task.is_done_for(on_date)` | Per-date completion check. Recurring tasks store each completed date in `completed_dates: set[date]`; non-recurring tasks use the permanent `completed` bool. This lets a daily task reset each morning without requiring a new object for every new day. |
+| `Scheduler._is_scheduled_on(task, date)` | Decides whether a task belongs in a given day's plan. Includes a **start-date guard** (`if date < task.scheduled_time.date(): return False`) that prevents a spawned task due tomorrow from appearing in today's daily plan. |
 
 ## 📸 Demo Walkthrough
 

@@ -335,24 +335,60 @@ class Scheduler:
         return self.sort_by_time(results)
 
     def get_sorted_tasks(self) -> list[Task]:
-        """Return every task across all pets sorted by time, with priority as a tiebreaker."""
+        """Return every task across all pets sorted chronologically, priority as a tiebreaker.
+
+        The sort key is a two-element tuple: (scheduled_time, TASK_PRIORITY[task_type]).
+        When two tasks share the same scheduled_time the one with the lower priority
+        number sorts first — MEDICATION (1) appears before FEEDING (3) at 07:00 AM.
+
+        This ordering is the foundation for detect_all_conflicts() and
+        generate_daily_plan(), both of which rely on sorted order to enable
+        the early-break optimisation in their inner loops.
+        """
         all_tasks = [task for pet in self.pets for task in pet.tasks]
         return sorted(all_tasks, key=lambda t: (t.scheduled_time, TASK_PRIORITY[t.task_type]))
 
     def filter_by_pet(self, pet_id: str) -> list[Task]:
-        """Return all tasks for a specific pet sorted by time and priority."""
+        """Return all tasks belonging to one pet, sorted by time then priority.
+
+        Looks up the pet by its internal ID string. Raises ValueError if no pet
+        with that ID is registered. For a human-readable name lookup use
+        filter_tasks(pet_name=...) instead.
+
+        Useful for per-pet dashboards or auditing one pet's workload in isolation
+        without scanning the full task list manually.
+        """
         pet = self._find_pet(pet_id)
         return sorted(pet.tasks, key=lambda t: (t.scheduled_time, TASK_PRIORITY[t.task_type]))
 
     def filter_by_status(
         self, completed: bool, reference_date: Optional[datetime] = None
     ) -> list[Task]:
-        """Return tasks matching the given completion status for the reference date (default: now)."""
+        """Return tasks that match the given completion status on the reference date.
+
+        reference_date controls what "completed" means for recurring tasks:
+          - A daily feeding completed today is done for today's date but pending
+            again tomorrow — is_done_for() checks completed_dates, not the bool.
+          - A non-recurring task uses its permanent completed boolean instead.
+
+        Pass reference_date explicitly when querying a past or future date, or
+        in tests to control the reference point. Omit for the current moment.
+        """
         ref = reference_date or datetime.now()
         return [t for t in self.get_sorted_tasks() if t.is_done_for(ref) == completed]
 
     def get_overdue_tasks(self, now: Optional[datetime] = None) -> list[Task]:
-        """Return non-recurring tasks that are past due and not yet completed."""
+        """Return all non-recurring tasks that are past their due time and still incomplete.
+
+        A task qualifies as overdue when all three conditions hold:
+          - recurring is False  — recurring tasks never go overdue; they auto-spawn
+            a fresh instance via spawn_next() when marked complete instead.
+          - completed is False  — already-finished tasks are excluded.
+          - scheduled_time < cutoff  — the due time has already passed.
+
+        Pass now explicitly in tests to control the reference point; omit for the
+        current moment (defaults to datetime.now()).
+        """
         cutoff = now or datetime.now()
         return [
             t for t in self.get_sorted_tasks()
@@ -362,7 +398,20 @@ class Scheduler:
     def detect_conflict(
         self, task: Task, reference_date: Optional[datetime] = None
     ) -> Optional[Task]:
-        """Return the first active task within the conflict window, or None. Skips completed tasks."""
+        """Probe a single candidate task and return the first active task it clashes with.
+
+        Use this for real-time feedback when the owner is about to add one task:
+        call detect_conflict(candidate) before committing to give an immediate
+        warning. For a full audit of the existing schedule use detect_all_conflicts().
+
+        Skips tasks that are already completed (is_done_for) — a finished task
+        must not block a new booking in the same slot.
+
+        abs() is intentional: the candidate task may sit earlier or later than
+        any existing task in the sorted list, so the gap direction is unknown.
+
+        Returns the first conflicting Task found, or None if the slot is clear.
+        """
         ref    = reference_date or datetime.now()
         window = self.conflict_window.total_seconds()  # hoist: compute once
         for existing in self.get_sorted_tasks():
