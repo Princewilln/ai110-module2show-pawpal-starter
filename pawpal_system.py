@@ -245,12 +245,12 @@ class Scheduler:
             t for t in self.get_sorted_tasks()
             if not t.is_done_for(ref) and t.id != task.id
         ]
+        window   = self.conflict_window.total_seconds()  # hoist: compute once
         warnings: list[ConflictWarning] = []
         for existing in active:
-            delta = abs(
-                (existing.scheduled_time - task.scheduled_time).total_seconds()
-            )
-            if delta < self.conflict_window.total_seconds():
+            # abs() needed here: active is sorted by time but task may sit anywhere in it
+            delta = abs((existing.scheduled_time - task.scheduled_time).total_seconds())
+            if delta < window:
                 warnings.append(ConflictWarning(task_a=task, task_b=existing))
         return warnings
 
@@ -363,12 +363,14 @@ class Scheduler:
         self, task: Task, reference_date: Optional[datetime] = None
     ) -> Optional[Task]:
         """Return the first active task within the conflict window, or None. Skips completed tasks."""
-        ref = reference_date or datetime.now()
+        ref    = reference_date or datetime.now()
+        window = self.conflict_window.total_seconds()  # hoist: compute once
         for existing in self.get_sorted_tasks():
             if existing.id == task.id or existing.is_done_for(ref):
                 continue
+            # abs() needed: task may be earlier or later than any existing task
             delta = abs((existing.scheduled_time - task.scheduled_time).total_seconds())
-            if delta < self.conflict_window.total_seconds():
+            if delta < window:
                 return existing
         return None
 
@@ -381,15 +383,26 @@ class Scheduler:
         task, so two tasks at the same time clash whether they belong to the same pet
         or different pets.
         Returns an empty list when the schedule is conflict-free. Never raises.
+
+        Algorithm note — three simplifications over the naïve O(n²) scan:
+          1. No abs(): active is sorted by scheduled_time, so b always comes after a —
+             the gap (b - a) is always non-negative, abs() just adds noise.
+          2. window hoisted: self.conflict_window.total_seconds() computed once instead
+             of n·(n-1)/2 times inside the loop.
+          3. break on gap >= window: sorted order guarantees every subsequent b is even
+             further from a, so we can stop the inner loop early. In practice this
+             makes the inner loop O(k) where k ≈ tasks-per-slot, usually 1–2.
         """
         ref    = reference_date or datetime.now()
         active = [t for t in self.get_sorted_tasks() if not t.is_done_for(ref)]
+        window = self.conflict_window.total_seconds()  # hoisted: compute once
         warnings: list[ConflictWarning] = []
         for i, a in enumerate(active):
             for b in active[i + 1:]:
-                delta = abs((a.scheduled_time - b.scheduled_time).total_seconds())
-                if delta < self.conflict_window.total_seconds():
-                    warnings.append(ConflictWarning(task_a=a, task_b=b))
+                gap = (b.scheduled_time - a.scheduled_time).total_seconds()
+                if gap >= window:
+                    break  # sorted order: no later b can conflict with a
+                warnings.append(ConflictWarning(task_a=a, task_b=b))
         return warnings
 
     def generate_daily_plan(self, date: datetime) -> list[Task]:

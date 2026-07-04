@@ -36,12 +36,34 @@ Summary Table
 **a. Constraints and priorities**
 
 - What constraints does your scheduler consider (for example: time, priority, preferences)?
+
+The scheduler enforces four constraints:
+
+1. **Time** — every Task carries a `scheduled_time` (a Python `datetime`). The Scheduler flags any two active tasks whose times fall within a `conflict_window` (default 15 minutes) as a conflict. This is the primary constraint: a schedule without time is just a list.
+
+2. **Task priority** — a `TASK_PRIORITY` dictionary ranks task types: MEDICATION (1) > APPOINTMENT (2) > FEEDING (3) > WALK (4). When two tasks land at the exact same time slot, `sorted()` uses priority as a tiebreaker so the most medically urgent task always appears first in the daily plan.
+
+3. **Recurrence rules** — tasks declare DAILY, WEEKLY, or MONTHLY frequency. `_is_scheduled_on()` checks whether a task belongs on a given date using that rule, and a start-date guard prevents auto-spawned future tasks from bleeding into today's plan.
+
+4. **Completion state** — `is_done_for(date)` tracks whether a specific day's instance of a recurring task has been completed. Completed tasks are excluded from conflict detection so a finished task never blocks a new one.
+
 - How did you decide which constraints mattered most?
+
+Time came first because without it there is no scheduler — just a to-do list. Priority came second because real pet care has clear urgency ordering: a missed medication has health consequences; a delayed walk does not. The 15-minute conflict window was set as the smallest practical buffer — tight enough to catch genuine double-bookings, wide enough to flag tasks that realistically can't both start on time. Completion state was added last, specifically to fix the bug where a finished recurring task kept blocking new slots even after it was done.
 
 **b. Tradeoffs**
 
 - Describe one tradeoff your scheduler makes.
+
+`add_task_safe()` always registers the task and returns a list of `ConflictWarning` objects rather than refusing the operation. The schedule can therefore contain unresolved conflicts — the method never raises an exception or rejects a task.
+
+A secondary tradeoff is in recurring task handling: instead of computing occurrences on demand at query time, each call to `mark_task_complete()` physically spawns a new `Task` object (`spawn_next()`) for the next occurrence. The task list grows with every completion.
+
 - Why is that tradeoff reasonable for this scenario?
+
+**Warn-don't-block** is reasonable because the owner is the decision-maker, not the software. Two tasks at 9:00 AM may look like a conflict to the algorithm but be perfectly manageable in practice — filling a food bowl takes 30 seconds, which is compatible with starting a walk. Blocking the add would remove the owner's agency over their own schedule. The warning gives the information; the owner decides what to do with it.
+
+**Spawn-on-complete** is reasonable because concrete Task objects are independently completable, reschedulable, and auditable. If Tuesday's medication is skipped, only Tuesday's instance is marked overdue — Wednesday's is untouched. Generating instances on demand would make individual-day overrides much harder to express, and for a single-owner pet schedule the list will never grow large enough for the memory cost to matter.
 
 ---
 
