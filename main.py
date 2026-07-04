@@ -1,18 +1,24 @@
 """
-PawPal+ — main.py demo
-======================
-Demonstrates auto-rescheduling: when a daily or weekly recurring task is
-marked complete, Scheduler.mark_task_complete() uses Python's timedelta to
-compute the next due date and registers a fresh Task automatically.
+PawPal+ — main.py  (Conflict Detection Demo)
+=============================================
+Demonstrates lightweight conflict detection in Scheduler:
 
-Key timedelta rules implemented in Task.spawn_next():
-    DAILY  → next_time = scheduled_time + timedelta(days=1)
-    WEEKLY → next_time = scheduled_time + timedelta(weeks=1)
+  add_task_safe(task)      — always registers the task, returns list[ConflictWarning]
+  detect_all_conflicts()   — full scan of all active task pairs, returns list[ConflictWarning]
+
+ConflictWarning.message is a pre-formatted string — the program never crashes;
+callers read warnings and decide what to do.
+
+Conflict scenarios tested:
+  1. Same pet, exact same time
+  2. Different pets, exact same time
+  3. Same pet, within the 15-minute overlap window
+  4. Clean task (no overlap) — confirms empty warning list
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from pawpal_system import Frequency, Owner, Pet, Task, TaskType
+from pawpal_system import ConflictWarning, Owner, Pet, Task, TaskType
 
 SEP  = "=" * 64
 THIN = "─" * 64
@@ -35,56 +41,30 @@ def print_section(label: str) -> None:
     print(f"  {THIN}")
 
 
+def print_warnings(warnings: list[ConflictWarning]) -> None:
+    """Print every ConflictWarning message, or a clear ✓ when none exist."""
+    if not warnings:
+        print("    ✓  No conflicts — schedule is clear.")
+    else:
+        for w in warnings:
+            print(f"    {w.message}")
+
+
 def print_task_row(t: Task, pet_index: dict, ref: datetime) -> None:
     pet       = pet_index.get(t.pet_id)
     pet_label = pet.name if pet else t.pet_id
     status    = "✓" if t.is_done_for(ref) else "○"
-    recur_tag = f"  ↺ {t.frequency.value}" if t.recurring else "  (retired)"
+    recur_tag = f"  ↺ {t.frequency.value}" if t.recurring else ""
     time_str  = t.scheduled_time.strftime("%I:%M %p")
     type_str  = t.task_type.value.upper()
     print(f"    {status}  {time_str}   {type_str:<14}  {pet_label}{recur_tag}")
 
 
-def print_all_tasks(scheduler) -> None:
-    """Print every task in the scheduler, sorted by full datetime (spans multiple days)."""
-    all_tasks = sorted(
-        [t for pet in scheduler.pets for t in pet.tasks],
-        key=lambda t: t.scheduled_time,
-    )
-    print(f"    {'ID':<18}  {'DUE DATE':<24}  {'TYPE':<12}  {'STATUS'}")
-    print(f"    {THIN[:60]}")
-    for t in all_tasks:
-        due = t.scheduled_time.strftime("%a %b %d  %I:%M %p")
-        if t.completed:
-            status = "✓ done / retired"
-        elif not t.recurring:
-            status = "○ pending (one-off)"
-        else:
-            status = f"○ pending  ↺ {t.frequency.value}"
-        print(f"    {t.id:<18}  {due}  {t.task_type.value:<12}  {status}")
-
-
-def print_daily_plan(owner: Owner, date: datetime, pet_index: dict) -> None:
-    tasks = owner.get_daily_schedule(date)
-    label = date.strftime("%A, %B %d")
-    print_section(f"DAILY PLAN — {label}")
-    if not tasks:
-        print("    (no tasks scheduled)")
-        return
-    for t in tasks:
-        print_task_row(t, pet_index, date)
-    done = sum(1 for t in tasks if t.is_done_for(date))
-    print(f"\n    {len(tasks)} task(s) — {done} done, {len(tasks) - done} pending")
-
-
 # ── Main demo ──────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    today    = datetime.now()
-    tomorrow = today + timedelta(days=1)
-    day_2    = today + timedelta(days=2)
+    today = datetime.now()
 
-    # ── Setup ──────────────────────────────────────────────────────────────
     owner    = Owner("Alice")
     buddy    = Pet(id="p1", name="Buddy",    species="Golden Retriever", age=3)
     whiskers = Pet(id="p2", name="Whiskers", species="Persian Cat",      age=5)
@@ -92,77 +72,92 @@ def main() -> None:
     owner.add_pet(whiskers)
     pet_index = {p.id: p for p in owner.pets}
 
-    print_header("PawPal+ — Auto-Reschedule with timedelta")
+    print_header("PawPal+ — Lightweight Conflict Detection")
     print(f"  Owner : {owner.name}")
     print("  Pets  : Buddy (Golden Retriever)  |  Whiskers (Persian Cat)")
+    print(f"  Conflict window : {owner.scheduler.conflict_window.seconds // 60} minutes")
 
-    # Three recurring tasks — two daily, one weekly
+    # ── Anchor task: Buddy's walk at 09:00 AM ─────────────────────────────
+    #   Added with plain add_task — no conflicts yet (schedule is empty)
+    print_section("SETUP — anchor task, no conflicts yet")
     owner.scheduler.add_task(Task(
-        id="feed_buddy", pet_id="p1",
-        task_type=TaskType.FEEDING,
-        scheduled_time=today_at(7, 0),
-        recurring=True, frequency=Frequency.DAILY,
-    ))
-    owner.scheduler.add_task(Task(
-        id="walk_buddy", pet_id="p1",
+        id="walk_buddy",
+        pet_id="p1",
         task_type=TaskType.WALK,
-        scheduled_time=today_at(8, 0),
-        recurring=True, frequency=Frequency.WEEKLY,
+        scheduled_time=today_at(9, 0),
     ))
-    owner.scheduler.add_task(Task(
-        id="med_whiskers", pet_id="p2",
+    print("    Added: walk_buddy  (Buddy, WALK @ 09:00 AM)")
+    print_warnings(owner.scheduler.detect_all_conflicts())
+
+    # ── DEMO 1: Same pet, exact same time ─────────────────────────────────
+    #   Buddy already has a walk at 09:00.
+    #   Adding a feeding at 09:00 for the same pet → same-pet conflict.
+    print_section("DEMO 1 — same pet, exact same time")
+    print("    Adding: feed_buddy  (Buddy, FEEDING @ 09:00 AM)\n")
+
+    w1 = owner.scheduler.add_task_safe(Task(
+        id="feed_buddy",
+        pet_id="p1",
+        task_type=TaskType.FEEDING,
+        scheduled_time=today_at(9, 0),
+    ))
+    print_warnings(w1)
+
+    # ── DEMO 2: Different pets, exact same time ────────────────────────────
+    #   Whiskers gets a medication at 09:00 — same slot already has two Buddy tasks.
+    #   Owner can only physically be in one place, so this is a cross-pet conflict too.
+    print_section("DEMO 2 — different pets, exact same time")
+    print("    Adding: med_whiskers  (Whiskers, MEDICATION @ 09:00 AM)\n")
+
+    w2 = owner.scheduler.add_task_safe(Task(
+        id="med_whiskers",
+        pet_id="p2",
         task_type=TaskType.MEDICATION,
         scheduled_time=today_at(9, 0),
-        recurring=True, frequency=Frequency.DAILY,
     ))
+    print_warnings(w2)
 
-    # ── Before any completions ─────────────────────────────────────────────
-    print_section("INITIAL TASK LIST  (3 tasks, all pending)")
-    print_all_tasks(owner.scheduler)
+    # ── DEMO 3: Same pet, within the 15-minute overlap window ────────────
+    #   Buddy's appointment at 09:08 — only 8 minutes after the 09:00 cluster.
+    #   Still within the 15-minute conflict_window.
+    print_section("DEMO 3 — same pet, 8 min apart  (within 15-min window)")
+    print("    Adding: appt_buddy  (Buddy, APPOINTMENT @ 09:08 AM)\n")
 
-    # ── Step 1: complete a DAILY task ─────────────────────────────────────
-    #   spawn_next() runs: next_time = scheduled_time + timedelta(days=1)
-    print_section("STEP 1 — mark_task_complete('feed_buddy')  [DAILY]")
-    print("    Logic inside spawn_next():")
-    print("      next_time = scheduled_time + timedelta(days=1)")
-    print(f"      next_time = {today_at(7, 0).strftime('%b %d')} 07:00 AM  +  1 day")
-    print(f"             → {(today_at(7, 0) + timedelta(days=1)).strftime('%a %b %d')} 07:00 AM\n")
+    w3 = owner.scheduler.add_task_safe(Task(
+        id="appt_buddy",
+        pet_id="p1",
+        task_type=TaskType.APPOINTMENT,
+        scheduled_time=today_at(9, 8),
+    ))
+    print_warnings(w3)
 
-    spawned = owner.scheduler.mark_task_complete("feed_buddy")
+    # ── DEMO 4: Clean task — no conflict ──────────────────────────────────
+    #   Afternoon walk for Whiskers at 03:00 PM — nothing nearby.
+    #   add_task_safe returns an empty list → prints the clear message.
+    print_section("DEMO 4 — clean task, no overlap")
+    print("    Adding: walk_whiskers  (Whiskers, WALK @ 03:00 PM)\n")
 
-    print("    feed_buddy    → completed=True, recurring=False  (retired)")
-    print(f"    {spawned.id:<14} → created, due {spawned.scheduled_time.strftime('%A %b %d at %I:%M %p')}")
+    w4 = owner.scheduler.add_task_safe(Task(
+        id="walk_whiskers",
+        pet_id="p2",
+        task_type=TaskType.WALK,
+        scheduled_time=today_at(15, 0),
+    ))
+    print_warnings(w4)
 
-    # ── Step 2: complete the spawned task — proves the chain continues ─────
-    #   feed_buddy#2 is also DAILY → spawns feed_buddy#3
-    print_section("STEP 2 — mark_task_complete('feed_buddy#2')  [chain: generation 3]")
-    spawned2 = owner.scheduler.mark_task_complete("feed_buddy#2")
-    print("    feed_buddy#2  → completed=True, recurring=False  (retired)")
-    print(f"    {spawned2.id:<14} → created, due {spawned2.scheduled_time.strftime('%A %b %d at %I:%M %p')}")
+    # ── FULL SCAN: detect_all_conflicts() ────────────────────────────────
+    #   Scans every active pair — same-pet AND cross-pet.
+    #   Returns a ConflictWarning for each pair within the window.
+    print_section("FULL SCAN — detect_all_conflicts()  (all active task pairs)")
+    all_w = owner.scheduler.detect_all_conflicts()
+    print(f"    {len(all_w)} conflict(s) found:\n")
+    print_warnings(all_w)
 
-    # ── Step 3: complete a WEEKLY task ────────────────────────────────────
-    #   spawn_next() runs: next_time = scheduled_time + timedelta(weeks=1)
-    print_section("STEP 3 — mark_task_complete('walk_buddy')  [WEEKLY]")
-    print("    Logic inside spawn_next():")
-    print("      next_time = scheduled_time + timedelta(weeks=1)")
-    print(f"      next_time = {today_at(8, 0).strftime('%a %b %d')} 08:00 AM  +  7 days")
-    print(f"             → {(today_at(8, 0) + timedelta(weeks=1)).strftime('%a %b %d')} 08:00 AM\n")
-
-    spawned_walk = owner.scheduler.mark_task_complete("walk_buddy")
-    print("    walk_buddy    → completed=True, recurring=False  (retired)")
-    print(f"    {spawned_walk.id:<14} → created, due {spawned_walk.scheduled_time.strftime('%A %b %d at %I:%M %p')}")
-
-    # ── Full task list after all completions ───────────────────────────────
-    print_section("ALL TASKS — after 3 completions  (5 tasks now: 3 retired + 2 active + 1 untouched)")
-    print_all_tasks(owner.scheduler)
-
-    # ── Daily plans across 3 days ──────────────────────────────────────────
-    #   Today:     feed_buddy ✓, walk_buddy ✓, med_whiskers ○
-    #   Tomorrow:  feed_buddy#2 ✓ (already marked done), med_whiskers ○
-    #   Day +2:    feed_buddy#3 ○ (first fresh instance), med_whiskers ○
-    print_daily_plan(owner, today,    pet_index)
-    print_daily_plan(owner, tomorrow, pet_index)
-    print_daily_plan(owner, day_2,    pet_index)
+    # ── CURRENT SCHEDULE ──────────────────────────────────────────────────
+    #   All 5 tasks were registered — add_task_safe never blocked anything.
+    print_section(f"TODAY'S SCHEDULE  ({today.strftime('%A, %B %d')})  — all tasks registered")
+    for t in owner.scheduler.sort_by_time():
+        print_task_row(t, pet_index, today)
 
     print()
 

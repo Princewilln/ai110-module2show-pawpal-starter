@@ -188,6 +188,34 @@ class Owner:
         return self.scheduler.generate_daily_plan(date)
 
 
+@dataclass(frozen=True)
+class ConflictWarning:
+    """A lightweight conflict report — carries the two clashing tasks and a message string.
+
+    Returned by add_task_safe() and detect_all_conflicts() instead of raising exceptions,
+    so the program keeps running and the caller decides what to do with the information.
+    frozen=True: warnings are immutable facts, not editable state.
+    """
+    task_a: Task
+    task_b: Task
+
+    @property
+    def message(self) -> str:
+        """Format a human-readable warning string. Never raises."""
+        scope   = "same pet" if self.task_a.pet_id == self.task_b.pet_id else "different pets"
+        gap_sec = abs(
+            (self.task_a.scheduled_time - self.task_b.scheduled_time).total_seconds()
+        )
+        timing  = "same time" if gap_sec == 0 else f"{int(gap_sec // 60)} min apart"
+        return (
+            f"⚠  CONFLICT ({scope}, {timing})  "
+            f"'{self.task_a.id}' {self.task_a.task_type.value} "
+            f"@ {self.task_a.scheduled_time.strftime('%I:%M %p')}  ↔  "
+            f"'{self.task_b.id}' {self.task_b.task_type.value} "
+            f"@ {self.task_b.scheduled_time.strftime('%I:%M %p')}"
+        )
+
+
 class Scheduler:
     def __init__(
         self,
@@ -201,6 +229,30 @@ class Scheduler:
         """Route a task to the correct pet using the task's pet_id."""
         pet = self._find_pet(task.pet_id)
         pet.add_task(task)
+
+    def add_task_safe(
+        self, task: Task, reference_date: Optional[datetime] = None
+    ) -> list[ConflictWarning]:
+        """Add a task and return any ConflictWarning objects it introduces. Never raises.
+
+        The task is always registered — this is lightweight conflict detection:
+        warn the caller, but never block the operation or crash the program.
+        Returns an empty list when the new task has no clashes.
+        """
+        self.add_task(task)
+        ref     = reference_date or datetime.now()
+        active  = [
+            t for t in self.get_sorted_tasks()
+            if not t.is_done_for(ref) and t.id != task.id
+        ]
+        warnings: list[ConflictWarning] = []
+        for existing in active:
+            delta = abs(
+                (existing.scheduled_time - task.scheduled_time).total_seconds()
+            )
+            if delta < self.conflict_window.total_seconds():
+                warnings.append(ConflictWarning(task_a=task, task_b=existing))
+        return warnings
 
     def remove_task(self, task_id: str) -> None:
         """Search all pets for the task by ID and remove it, raising ValueError if not found."""
@@ -320,19 +372,25 @@ class Scheduler:
                 return existing
         return None
 
-    def detect_all_conflicts(self, reference_date: Optional[datetime] = None) -> list[tuple[Task, Task]]:
-        """Return all pairs of active same-pet tasks whose times overlap within the conflict window."""
+    def detect_all_conflicts(
+        self, reference_date: Optional[datetime] = None
+    ) -> list[ConflictWarning]:
+        """Scan every pair of active tasks for time overlaps. Returns ConflictWarning objects.
+
+        Checks BOTH same-pet and cross-pet pairs: the owner physically attends every
+        task, so two tasks at the same time clash whether they belong to the same pet
+        or different pets.
+        Returns an empty list when the schedule is conflict-free. Never raises.
+        """
         ref    = reference_date or datetime.now()
         active = [t for t in self.get_sorted_tasks() if not t.is_done_for(ref)]
-        conflicts: list[tuple[Task, Task]] = []
+        warnings: list[ConflictWarning] = []
         for i, a in enumerate(active):
             for b in active[i + 1:]:
-                if a.pet_id != b.pet_id:
-                    continue
                 delta = abs((a.scheduled_time - b.scheduled_time).total_seconds())
                 if delta < self.conflict_window.total_seconds():
-                    conflicts.append((a, b))
-        return conflicts
+                    warnings.append(ConflictWarning(task_a=a, task_b=b))
+        return warnings
 
     def generate_daily_plan(self, date: datetime) -> list[Task]:
         """Collect all tasks scheduled on the given date, sorted by time then priority."""
