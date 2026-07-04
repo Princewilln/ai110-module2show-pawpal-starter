@@ -104,6 +104,39 @@ tests/test_pawpal.py::test_add_task_increases_pet_task_count PASSED             
 
 ```
 
+latet test
+
+```
+(.venv) meltingtech@meltingtech:~/codepath/ai110-module2show-pawpal-starter$ python3 -m pytest
+===================================================================================================================================== test session starts ======================================================================================================================================
+platform linux -- Python 3.13.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/meltingtech/codepath/ai110-module2show-pawpal-starter
+plugins: anyio-4.14.1
+collected 32 items                                                                                                                                                                                                                                                                             
+
+tests/test_pawpal.py ................................                                                                                                                                                                                                                                    [100%]
+
+====================================================================================================================================== 32 passed in 0.03s ======================================================================================================================================
+
+
+What the PawPal+ test suite covers
+32 tests across 6 groups:
+
+Sorting — tasks added out of order come back chronologically; when two tasks share a time slot, the priority ranking (Medication → Appointment → Feeding → Walk) breaks the tie.
+
+Conflict Detection — same-pet same-time triggers a warning; cross-pet same-time also triggers one (owner attends both); 8 minutes apart warns, exactly 15 minutes apart does not; completed tasks don't block their old slot.
+
+Recurring Spawn — marking a daily task complete registers a new task shifted +1 day; the original is retired (recurring=False, completed=True); the ID chain increments correctly (feed1 → feed1#2 → feed1#3); weekly tasks shift +7 days; non-recurring tasks return None.
+
+Per-date Completion — a recurring task marked done today shows as pending tomorrow; a non-recurring task stays completed permanently regardless of date.
+
+Daily Plan Guard — a spawned task (due tomorrow) is excluded from today's plan but appears in tomorrow's; a date with no tasks returns an empty list.
+
+Edge Cases — pet with zero tasks never crashes; recurring=True with no frequency raises ValueError; adding a task to the wrong pet raises ValueError; recurring tasks are never flagged as overdue; duplicate pet IDs are rejected.
+
+Confidence Level" (1–5 stars) in the system's reliability based on my test results is 4.5
+
+```
 ## 📐 Smarter Scheduling
 
 All scheduling intelligence lives in `pawpal_system.py` across the `Task`,
