@@ -88,6 +88,55 @@ class Task:
                 return None
         return None
 
+    def spawn_next(self) -> Task:
+        """Create and return the next recurring instance of this task.
+
+        Computes next_time using timedelta — the standard Python way to shift dates:
+            DAILY  → scheduled_time + timedelta(days=1)
+            WEEKLY → scheduled_time + timedelta(weeks=1)
+
+        Assigns a lineage ID so the chain is traceable:
+            "feed_buddy" → "feed_buddy#2" → "feed_buddy#3" → ...
+
+        Raises ValueError if the task is not recurring.
+        """
+        if not self.recurring:
+            raise ValueError(
+                f"Task '{self.id}' is not recurring — cannot spawn a next occurrence."
+            )
+
+        if self.frequency == Frequency.DAILY:
+            next_time = self.scheduled_time + timedelta(days=1)
+        elif self.frequency == Frequency.WEEKLY:
+            next_time = self.scheduled_time + timedelta(weeks=1)
+        elif self.frequency == Frequency.MONTHLY:
+            month = self.scheduled_time.month % 12 + 1
+            year  = self.scheduled_time.year + (1 if self.scheduled_time.month == 12 else 0)
+            try:
+                next_time = self.scheduled_time.replace(year=year, month=month)
+            except ValueError:
+                import calendar
+                last_day = calendar.monthrange(year, month)[1]
+                next_time = self.scheduled_time.replace(year=year, month=month, day=last_day)
+        else:
+            raise ValueError(f"Cannot spawn next: unsupported frequency '{self.frequency}'.")
+
+        # Build lineage ID: "t1" → "t1#2", "t1#2" → "t1#3", etc.
+        if "#" in self.id:
+            base_id, gen = self.id.rsplit("#", 1)
+            next_id = f"{base_id}#{int(gen) + 1}"
+        else:
+            next_id = f"{self.id}#2"
+
+        return Task(
+            id=next_id,
+            pet_id=self.pet_id,
+            task_type=self.task_type,
+            scheduled_time=next_time,
+            recurring=True,
+            frequency=self.frequency,
+        )
+
 
 @dataclass
 class Pet:
@@ -161,6 +210,36 @@ class Scheduler:
                     pet.remove_task(task_id)
                     return
         raise ValueError(f"Task '{task_id}' not found across any registered pet.")
+
+    def mark_task_complete(
+        self, task_id: str, on_date: Optional[datetime] = None
+    ) -> Optional[Task]:
+        """Mark a task complete and auto-spawn the next occurrence for daily/weekly recurring tasks.
+
+        For a recurring task the sequence is:
+          1. Call spawn_next() to build the next Task (timedelta shifts the scheduled_time).
+          2. Call mark_complete() on the original (records completion, sets completed=True).
+          3. Set recurring=False on the original so it stops appearing in future daily plans.
+          4. Register the new instance via add_task().
+
+        For non-recurring or monthly tasks, only step 2 runs.
+        Returns the newly spawned Task, or None if nothing was spawned.
+        """
+        target = self._find_task(task_id)
+
+        # Spawn BEFORE touching the original — spawn_next() reads self.recurring
+        next_task: Optional[Task] = None
+        if target.recurring and target.frequency in (Frequency.DAILY, Frequency.WEEKLY):
+            next_task = target.spawn_next()
+
+        target.mark_complete(on_date)
+
+        if next_task is not None:
+            target.recurring  = False  # retire: won't repeat in future daily plans
+            target.completed  = True   # mark_complete ran while recurring=True so didn't set this
+            self.add_task(next_task)
+
+        return next_task
 
     def sort_by_time(self, tasks: Optional[list[Task]] = None) -> list[Task]:
         """Return tasks sorted by scheduled time using a lambda on the 'HH:MM' string key.
@@ -274,10 +353,25 @@ class Scheduler:
                 return pet
         raise ValueError(f"Pet '{pet_id}' not registered with this scheduler.")
 
+    def _find_task(self, task_id: str) -> Task:
+        """Look up a task by ID across all pets, raising ValueError if not found."""
+        for pet in self.pets:
+            for task in pet.tasks:
+                if task.id == task_id:
+                    return task
+        raise ValueError(f"Task '{task_id}' not found across any registered pet.")
+
     def _is_scheduled_on(self, task: Task, date: datetime) -> bool:
-        """Return True if the task falls on the given date based on its recurrence rule."""
+        """Return True if the task falls on the given date based on its recurrence rule.
+
+        For recurring tasks, dates earlier than the task's own scheduled_time.date()
+        are always excluded — a spawned task due tomorrow must not bleed into today's plan.
+        """
         if not task.recurring:
             return task.scheduled_time.date() == date.date()
+        # Never show a recurring task on a date before its start date.
+        if date.date() < task.scheduled_time.date():
+            return False
         if task.frequency == Frequency.DAILY:
             return True
         if task.frequency == Frequency.WEEKLY:
